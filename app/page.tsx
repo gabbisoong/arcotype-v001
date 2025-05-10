@@ -269,6 +269,17 @@ export default function Home() {
           })}
         </div>
       </div>
+      {/* Overlay red border for testing sidebar width */}
+      <div style={{
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        width: '300px',
+        height: '100vh',
+        border: '2px solid red',
+        pointerEvents: 'none',
+        zIndex: 9999,
+      }} />
       
       {/* Main content - Font Map */}
       <div style={{ 
@@ -602,6 +613,20 @@ export default function Home() {
             )}
           </div>
         </div>
+      )}
+      {/* Overlay red border for testing popup dimensions */}
+      {selectedFontId && (
+        <div style={{
+          position: 'fixed',
+          left: '330px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: '377px',
+          height: '555px',
+          border: '2px solid red',
+          pointerEvents: 'none',
+          zIndex: 9999,
+        }} />
       )}
     </div>
   );

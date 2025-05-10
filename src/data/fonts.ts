@@ -762,6 +762,74 @@ export const sampleFonts: Font[] = [
     useCases: []
   },
 
+  // Row 12
+  {
+    id: 'elsie',
+    name: 'Elsie',
+    designer: 'Ale Paul',
+    googleFontUrl: 'https://fonts.google.com/specimen/Elsie',
+    weights: ['400', '900'],
+    styles: ['normal'],
+    category: 'display',
+    position: { x: 0, y: 2046 },
+    useCases: []
+  },
+  {
+    id: 'elsie-swash-caps',
+    name: 'Elsie Swash Caps',
+    designer: 'Ale Paul',
+    googleFontUrl: 'https://fonts.google.com/specimen/Elsie+Swash+Caps',
+    weights: ['400', '900'],
+    styles: ['normal'],
+    category: 'display',
+    position: { x: 266, y: 2046 },
+    useCases: []
+  },
+  {
+    id: 'almendra',
+    name: 'Almendra',
+    designer: 'Ana Sanfelippo',
+    googleFontUrl: 'https://fonts.google.com/specimen/Almendra',
+    weights: ['400', '700'],
+    styles: ['normal', 'italic'],
+    category: 'serif',
+    position: { x: 532, y: 2046 },
+    useCases: []
+  },
+  {
+    id: 'luxurious-roman',
+    name: 'Luxurious Roman',
+    designer: 'Mans Greback',
+    googleFontUrl: 'https://fonts.google.com/specimen/Luxurious+Roman',
+    weights: ['400'],
+    styles: ['normal'],
+    category: 'serif',
+    position: { x: 798, y: 2046 },
+    useCases: []
+  },
+  {
+    id: 'kotta-one',
+    name: 'Kotta One',
+    designer: 'Eduardo Tunni',
+    googleFontUrl: 'https://fonts.google.com/specimen/Kotta+One',
+    weights: ['400'],
+    styles: ['normal'],
+    category: 'serif',
+    position: { x: 1064, y: 2046 },
+    useCases: []
+  },
+  {
+    id: 'diplomata',
+    name: 'Diplomata',
+    designer: 'Eduardo Tunni',
+    googleFontUrl: 'https://fonts.google.com/specimen/Diplomata',
+    weights: ['400'],
+    styles: ['normal'],
+    category: 'display',
+    position: { x: 1330, y: 1674 },
+    useCases: []
+  },
+
   // Last Row (corrected)
   {
     id: 'bigelow-rules',
@@ -829,70 +897,4 @@ export const sampleFonts: Font[] = [
     position: { x: 1330, y: 1860 },
     useCases: []
   },
-  {
-    id: 'elsie',
-    name: 'Elsie',
-    designer: 'Ale Paul',
-    googleFontUrl: 'https://fonts.google.com/specimen/Elsie',
-    weights: ['400', '900'],
-    styles: ['normal'],
-    category: 'display',
-    position: { x: 0, y: 2046 },
-    useCases: []
-  },
-  {
-    id: 'elsie-swash-caps',
-    name: 'Elsie Swash Caps',
-    designer: 'Ale Paul',
-    googleFontUrl: 'https://fonts.google.com/specimen/Elsie+Swash+Caps',
-    weights: ['400', '900'],
-    styles: ['normal'],
-    category: 'display',
-    position: { x: 266, y: 2046 },
-    useCases: []
-  },
-  {
-    id: 'almendra',
-    name: 'Almendra',
-    designer: 'Ana Sanfelippo',
-    googleFontUrl: 'https://fonts.google.com/specimen/Almendra',
-    weights: ['400', '700'],
-    styles: ['normal', 'italic'],
-    category: 'serif',
-    position: { x: 532, y: 2046 },
-    useCases: []
-  },
-  {
-    id: 'luxurious-roman',
-    name: 'Luxurious Roman',
-    designer: 'Mans Greback',
-    googleFontUrl: 'https://fonts.google.com/specimen/Luxurious+Roman',
-    weights: ['400'],
-    styles: ['normal'],
-    category: 'serif',
-    position: { x: 798, y: 2046 },
-    useCases: []
-  },
-  {
-    id: 'kotta-one',
-    name: 'Kotta One',
-    designer: 'Eduardo Tunni',
-    googleFontUrl: 'https://fonts.google.com/specimen/Kotta+One',
-    weights: ['400'],
-    styles: ['normal'],
-    category: 'serif',
-    position: { x: 1064, y: 2046 },
-    useCases: []
-  },
-  {
-    id: 'diplomata',
-    name: 'Diplomata',
-    designer: 'Eduardo Tunni',
-    googleFontUrl: 'https://fonts.google.com/specimen/Diplomata',
-    weights: ['400'],
-    styles: ['normal'],
-    category: 'display',
-    position: { x: 1330, y: 2046 },
-    useCases: []
-  }
 ];

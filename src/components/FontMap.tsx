@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useAnimation } from 'framer-motion';
 import useFontStore from '../store/useFontStore';
 import { fontConfigs } from '../lib/fontConfig';
 
@@ -167,9 +167,176 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
 
   // For autoscroll: refs for each FontCard
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  // Track grid position
-  const [gridPos, setGridPos] = useState<{ x: number; y: number }>({ x: -870, y: -1050 });
+  // Use motion values for x and y
+  const x = useMotionValue(-870);
+  const y = useMotionValue(-1050);
+  const controls = useAnimation();
   const gridContainerRef = useRef<HTMLDivElement>(null);
+
+  // Track if user is actively dragging (mouse or touch or wheel)
+  const isUserDragging = useRef(false);
+  // For touch pan
+  const lastTouchMidpoint = useRef<{ x: number; y: number } | null>(null);
+  // For wheel pan
+  const lastWheelPos = useRef<{ x: number; y: number }>({ x: -870, y: -1050 });
+
+  // --- BOUNCE/CLAMP LOGIC ---
+  // Card/grid sizing
+  const cardWidth = 288;
+  const cardHeight = 196;
+  const gap = 20;
+  const columns = 9;
+  const rows = 14;
+  const bounce = 80; // px
+
+  // Calculate grid and container sizes
+  const gridWidth = columns * cardWidth + (columns - 1) * gap;
+  const gridHeight = rows * cardHeight + (rows - 1) * gap;
+  const [containerSize, setContainerSize] = useState({ width: 1200, height: 800 });
+  useEffect(() => {
+    function updateSize() {
+      if (gridContainerRef.current) {
+        setContainerSize({
+          width: gridContainerRef.current.offsetWidth,
+          height: gridContainerRef.current.offsetHeight,
+        });
+      }
+    }
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  // Clamp function with bounce
+  function clampWithBounce(val: number, min: number, max: number, bounce: number) {
+    if (val < min - bounce) return min - bounce;
+    if (val > max + bounce) return max + bounce;
+    return val;
+  }
+  // Clamp function (no bounce)
+  function clamp(val: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, val));
+  }
+  // Compute min/max for x/y
+  const minX = Math.min(containerSize.width - gridWidth, 0);
+  const maxX = 0;
+  const minY = Math.min(containerSize.height - gridHeight, 0);
+  const maxY = 0;
+
+  // Mouse drag logic (with clamp/bounce)
+  function onPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0) return;
+    isUserDragging.current = true;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    lastWheelPos.current = { x: x.get(), y: y.get() };
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    if (!isUserDragging.current) return;
+    if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
+      let newX = lastWheelPos.current.x + e.movementX;
+      let newY = lastWheelPos.current.y + e.movementY;
+      // Remove clamping: allow free movement
+      x.set(newX);
+      y.set(newY);
+      lastWheelPos.current = { x: newX, y: newY };
+    }
+  }
+  function onPointerUp(e: React.PointerEvent) {
+    isUserDragging.current = false;
+    // No snapping back, allow free movement
+  }
+
+  // Touch and wheel event handlers (with clamp/bounce)
+  useEffect(() => {
+    const container = gridContainerRef.current;
+    if (!container) return;
+
+    function getMidpoint(touches: TouchList) {
+      if (touches.length !== 2) return null;
+      const t1 = touches[0];
+      const t2 = touches[1];
+      return {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+      };
+    }
+
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length === 2) {
+        isUserDragging.current = true;
+        lastTouchMidpoint.current = getMidpoint(e.touches);
+      }
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      if (isUserDragging.current && e.touches.length === 2) {
+        e.preventDefault();
+        const midpoint = getMidpoint(e.touches);
+        if (midpoint && lastTouchMidpoint.current) {
+          let dx = midpoint.x - lastTouchMidpoint.current.x;
+          let dy = midpoint.y - lastTouchMidpoint.current.y;
+          let newX = x.get() + dx;
+          let newY = y.get() + dy;
+          // Remove clamping: allow free movement
+          x.set(newX);
+          y.set(newY);
+          lastTouchMidpoint.current = midpoint;
+        }
+      }
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      if (e.touches.length < 2) {
+        isUserDragging.current = false;
+        lastTouchMidpoint.current = null;
+        // Snap back if out of bounds
+        let newX = clamp(x.get(), minX, maxX);
+        let newY = clamp(y.get(), minY, maxY);
+        if (newX !== x.get() || newY !== y.get()) {
+          controls.start({ x: newX, y: newY }, { type: 'spring', stiffness: 500, damping: 40 });
+        }
+      }
+    }
+
+    function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey) {
+        e.preventDefault();
+        let newX = x.get() - e.deltaX;
+        let newY = y.get() - e.deltaY;
+        // Remove clamping: allow free movement
+        x.set(newX);
+        y.set(newY);
+      }
+    }
+
+    container.addEventListener('touchstart', onTouchStart, { passive: false });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchend', onTouchEnd, { passive: false });
+    container.addEventListener('touchcancel', onTouchEnd, { passive: false });
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+      container.removeEventListener('touchend', onTouchEnd);
+      container.removeEventListener('touchcancel', onTouchEnd);
+      container.removeEventListener('wheel', onWheel);
+    };
+  }, [x, y, containerSize]);
+
+  // Center the selected card when centeredFontId changes (programmatic move)
+  useEffect(() => {
+    if (!centeredFontId) return;
+    const card = cardRefs.current[centeredFontId];
+    const gridContainer = gridContainerRef.current;
+    if (card && gridContainer) {
+      const cardRect = card.getBoundingClientRect();
+      const containerRect = gridContainer.getBoundingClientRect();
+      const dx = cardRect.left - containerRect.left - (containerRect.width / 2) + (cardRect.width / 2) - 200;
+      const dy = cardRect.top - containerRect.top - (containerRect.height / 2) + (cardRect.height / 2) + 5;
+      // Use spring for programmatic move
+      controls.start({ x: x.get() - dx, y: y.get() - dy }, { type: 'spring', stiffness: 500, damping: 40 });
+    }
+  }, [centeredFontId]);
 
   const renderGrid = () => {
     const grid = [];
@@ -796,6 +963,21 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       );
     });
 
+    // Add BlankCard after Chonburi in row 8
+    grid.push(
+      <div
+        key={`blank-row8-after-chonburi`}
+        style={{
+          gridColumn: `${row8Fonts.length + 2}`,
+          gridRow: '8',
+          width: '288px',
+          display: 'block'
+        }}
+      >
+        <BlankCard />
+      </div>
+    );
+
     // Add these fonts to usedFontNames
     row8FontNames.forEach(name => usedFontNames.add(name));
 
@@ -1335,47 +1517,34 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
     return grid;
   };
 
-  // Center the selected card when centeredFontId changes
-  useEffect(() => {
-    if (!centeredFontId) return;
-    const card = cardRefs.current[centeredFontId];
-    const gridContainer = gridContainerRef.current;
-    if (card && gridContainer) {
-      const cardRect = card.getBoundingClientRect();
-      const containerRect = gridContainer.getBoundingClientRect();
-      // Calculate the offset needed to center the card
-      const dx = cardRect.left - containerRect.left - (containerRect.width / 2) + (cardRect.width / 2) - 200;
-      const dy = cardRect.top - containerRect.top - (containerRect.height / 2) + (cardRect.height / 2) + 5;
-      setGridPos(pos => ({ x: pos.x - dx, y: pos.y - dy }));
-    }
-  }, [centeredFontId]);
-
   return (
-    <div style={{ width: '100%', overflowX: 'auto', height: '100%' }} ref={gridContainerRef}>
+    <div
+      style={{ 
+        width: '100%', 
+        height: '100%', 
+        overflow: 'hidden',
+      }}
+      ref={gridContainerRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerUp}
+    >
       <motion.div
-        drag
-        dragConstraints={{
-          left: -2000,
-          right: 0,
-          top: -2000,
-          bottom: 0
-        }}
-        animate={gridPos}
-        transition={{
-          type: 'spring',
-          stiffness: 100,
-          damping: 20,
-          mass: 1,
-          duration: 0.8
-        }}
-        style={{ 
+        style={{
+          x,
+          y,
           display: 'grid',
           gridTemplateColumns: 'repeat(9, 288px)',
           gridTemplateRows: 'repeat(14, 196px)',
           gap: '20px',
           padding: 0,
           width: 'max-content',
+          willChange: 'transform',
         }}
+        animate={controls}
+        transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+        drag={false}
       >
         {renderGrid()}
       </motion.div>

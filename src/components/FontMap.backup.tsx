@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useAnimation } from 'framer-motion';
 import useFontStore from '../store/useFontStore';
 import { fontConfigs } from '../lib/fontConfig';
 
@@ -62,8 +62,19 @@ const FontCard: React.FC<FontCardProps> = ({
   // Card padding for left/right only
   const cardPaddingLeft = 40;
   const cardPaddingRight = 40;
-  const cardPaddingTop = isTwoLines ? 36 : 50;
-  const cardPaddingBottom = 40;
+  // Determine if the font name is a single word
+  const isSingleWord = fontName.trim().split(' ').length === 1;
+  // Font size and top padding rules
+  let fontNameFontSize = 32;
+  let cardPaddingTop = 50;
+  if (isSingleWord && isTwoLines) {
+    fontNameFontSize = 28;
+    cardPaddingTop = 50;
+  } else if (isTwoLines) {
+    fontNameFontSize = 32;
+    cardPaddingTop = 36;
+  }
+  const cardPaddingBottom = 36;
 
   return (
     <div
@@ -94,7 +105,7 @@ const FontCard: React.FC<FontCardProps> = ({
           top: cardPaddingTop,
           left: cardPaddingLeft,
           right: cardPaddingRight,
-          fontSize: '32px',
+          fontSize: `${fontNameFontSize}px`,
           fontWeight: 500,
           margin: 0,
           lineHeight: 1,
@@ -114,7 +125,7 @@ const FontCard: React.FC<FontCardProps> = ({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'flex-start',
-          gap: '2px',
+          gap: '3px',
           pointerEvents: 'none',
         }}
       >
@@ -156,9 +167,184 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
 
   // For autoscroll: refs for each FontCard
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  // Track grid position
-  const [gridPos, setGridPos] = useState<{ x: number; y: number }>({ x: -870, y: -1050 });
+  // Use motion values for x and y
+  const x = useMotionValue(-870);
+  const y = useMotionValue(-1050);
+  const controls = useAnimation();
   const gridContainerRef = useRef<HTMLDivElement>(null);
+
+  // Track if user is actively dragging (mouse or touch or wheel)
+  const isUserDragging = useRef(false);
+  // For touch pan
+  const lastTouchMidpoint = useRef<{ x: number; y: number } | null>(null);
+  // For wheel pan
+  const lastWheelPos = useRef<{ x: number; y: number }>({ x: -870, y: -1050 });
+
+  // --- BOUNCE/CLAMP LOGIC ---
+  // Card/grid sizing
+  const cardWidth = 288;
+  const cardHeight = 196;
+  const gap = 20;
+  const columns = 9;
+  const rows = 14;
+  const bounce = 80; // px
+
+  // Calculate grid and container sizes
+  const gridWidth = columns * cardWidth + (columns - 1) * gap;
+  const gridHeight = rows * cardHeight + (rows - 1) * gap;
+  const [containerSize, setContainerSize] = useState({ width: 1200, height: 800 });
+  useEffect(() => {
+    function updateSize() {
+      if (gridContainerRef.current) {
+        setContainerSize({
+          width: gridContainerRef.current.offsetWidth,
+          height: gridContainerRef.current.offsetHeight,
+        });
+      }
+    }
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  // Clamp function with bounce
+  function clampWithBounce(val: number, min: number, max: number, bounce: number) {
+    if (val < min - bounce) return min - bounce;
+    if (val > max + bounce) return max + bounce;
+    return val;
+  }
+  // Clamp function (no bounce)
+  function clamp(val: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, val));
+  }
+  // Compute min/max for x/y
+  const minX = Math.min(containerSize.width - gridWidth, 0);
+  const maxX = 0;
+  const minY = Math.min(containerSize.height - gridHeight, 0);
+  const maxY = 0;
+
+  // Mouse drag logic (with clamp/bounce)
+  function onPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0) return;
+    isUserDragging.current = true;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    lastWheelPos.current = { x: x.get(), y: y.get() };
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    if (!isUserDragging.current) return;
+    if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
+      let newX = lastWheelPos.current.x + e.movementX;
+      let newY = lastWheelPos.current.y + e.movementY;
+      newX = clampWithBounce(newX, minX, maxX, bounce);
+      newY = clampWithBounce(newY, minY, maxY, bounce);
+      x.set(newX);
+      y.set(newY);
+      lastWheelPos.current = { x: newX, y: newY };
+    }
+  }
+  function onPointerUp(e: React.PointerEvent) {
+    isUserDragging.current = false;
+    // Snap back if out of bounds
+    let newX = clamp(x.get(), minX, maxX);
+    let newY = clamp(y.get(), minY, maxY);
+    if (newX !== x.get() || newY !== y.get()) {
+      controls.start({ x: newX, y: newY }, { type: 'spring', stiffness: 500, damping: 40 });
+    }
+  }
+
+  // Touch and wheel event handlers (with clamp/bounce)
+  useEffect(() => {
+    const container = gridContainerRef.current;
+    if (!container) return;
+
+    function getMidpoint(touches: TouchList) {
+      if (touches.length !== 2) return null;
+      const t1 = touches[0];
+      const t2 = touches[1];
+      return {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+      };
+    }
+
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length === 2) {
+        isUserDragging.current = true;
+        lastTouchMidpoint.current = getMidpoint(e.touches);
+      }
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      if (isUserDragging.current && e.touches.length === 2) {
+        e.preventDefault();
+        const midpoint = getMidpoint(e.touches);
+        if (midpoint && lastTouchMidpoint.current) {
+          let dx = midpoint.x - lastTouchMidpoint.current.x;
+          let dy = midpoint.y - lastTouchMidpoint.current.y;
+          let newX = x.get() + dx;
+          let newY = y.get() + dy;
+          newX = clampWithBounce(newX, minX, maxX, bounce);
+          newY = clampWithBounce(newY, minY, maxY, bounce);
+          x.set(newX);
+          y.set(newY);
+          lastTouchMidpoint.current = midpoint;
+        }
+      }
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      if (e.touches.length < 2) {
+        isUserDragging.current = false;
+        lastTouchMidpoint.current = null;
+        // Snap back if out of bounds
+        let newX = clamp(x.get(), minX, maxX);
+        let newY = clamp(y.get(), minY, maxY);
+        if (newX !== x.get() || newY !== y.get()) {
+          controls.start({ x: newX, y: newY }, { type: 'spring', stiffness: 500, damping: 40 });
+        }
+      }
+    }
+
+    function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey) {
+        e.preventDefault();
+        let newX = x.get() - e.deltaX;
+        let newY = y.get() - e.deltaY;
+        newX = clampWithBounce(newX, minX, maxX, bounce);
+        newY = clampWithBounce(newY, minY, maxY, bounce);
+        x.set(newX);
+        y.set(newY);
+      }
+    }
+
+    container.addEventListener('touchstart', onTouchStart, { passive: false });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchend', onTouchEnd, { passive: false });
+    container.addEventListener('touchcancel', onTouchEnd, { passive: false });
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+      container.removeEventListener('touchend', onTouchEnd);
+      container.removeEventListener('touchcancel', onTouchEnd);
+      container.removeEventListener('wheel', onWheel);
+    };
+  }, [x, y, containerSize]);
+
+  // Center the selected card when centeredFontId changes (programmatic move)
+  useEffect(() => {
+    if (!centeredFontId) return;
+    const card = cardRefs.current[centeredFontId];
+    const gridContainer = gridContainerRef.current;
+    if (card && gridContainer) {
+      const cardRect = card.getBoundingClientRect();
+      const containerRect = gridContainer.getBoundingClientRect();
+      const dx = cardRect.left - containerRect.left - (containerRect.width / 2) + (cardRect.width / 2) - 200;
+      const dy = cardRect.top - containerRect.top - (containerRect.height / 2) + (cardRect.height / 2) + 5;
+      // Use spring for programmatic move
+      controls.start({ x: x.get() - dx, y: y.get() - dy }, { type: 'spring', stiffness: 500, damping: 40 });
+    }
+  }, [centeredFontId]);
 
   const renderGrid = () => {
     const grid = [];
@@ -232,6 +418,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 2}`,
             gridRow: '2',
@@ -330,6 +517,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 2}`,
             gridRow: '3',
@@ -415,6 +603,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 2}`,
             gridRow: '4',
@@ -498,6 +687,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 2}`,
             gridRow: '5',
@@ -589,6 +779,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 2}`,
             gridRow: '6',
@@ -673,6 +864,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 2}`,
             gridRow: '7',
@@ -761,6 +953,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 2}`,
             gridRow: '8',
@@ -777,6 +970,21 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
         </div>
       );
     });
+
+    // Add BlankCard after Chonburi in row 8
+    grid.push(
+      <div
+        key={`blank-row8-after-chonburi`}
+        style={{
+          gridColumn: `${row8Fonts.length + 2}`,
+          gridRow: '8',
+          width: '288px',
+          display: 'block'
+        }}
+      >
+        <BlankCard />
+      </div>
+    );
 
     // Add these fonts to usedFontNames
     row8FontNames.forEach(name => usedFontNames.add(name));
@@ -818,6 +1026,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 2}`,
             gridRow: '9',
@@ -891,6 +1100,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 3}`,
             gridRow: '10',
@@ -978,6 +1188,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 3}`,
             gridRow: '11',
@@ -1069,6 +1280,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       grid.push(
         <div
           key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
           style={{
             gridColumn: `${index + 2}`,
             gridRow: '12',
@@ -1091,7 +1303,7 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       <div
         key={`blank-row12-1`}
         style={{
-          gridColumn: `6`,
+          gridColumn: `7`,
           gridRow: '12',
           width: '288px',
           display: 'block'
@@ -1101,13 +1313,207 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
       </div>
     );
 
-    // Third BlankCard for row 12
+    const diplomataFont = row12Fonts[5];
+    if (diplomataFont) {
+      grid.push(
+        <div
+          key={diplomataFont.id}
+          ref={el => { cardRefs.current[diplomataFont.id] = el; }}
+          style={{
+            gridColumn: `8`,
+            gridRow: '12',
+            width: '288px',
+            display: 'block'
+          }}
+        >
+          <FontCard
+            fontName={diplomataFont.name}
+            foundry={diplomataFont.designer}
+            isSelected={selectedFontId === diplomataFont.id}
+            onClick={() => onSelectFont(diplomataFont.id)}
+          />
+        </div>
+      );
+    }
+
+    // Last BlankCard for row 12
     grid.push(
       <div
-        key={`blank-row12-2`}
+        key={`blank-row12-end`}
+        style={{
+          gridColumn: `9`,
+          gridRow: '12',
+          width: '288px',
+          display: 'block'
+        }}
+      >
+        <BlankCard />
+      </div>
+    );
+    // Add BlankCard at end of row 12
+    grid.push(
+      <div
+        key={`blank-row12-end-10`}
         style={{
           gridColumn: `10`,
           gridRow: '12',
+          width: '288px',
+          display: 'block'
+        }}
+      >
+        <BlankCard />
+      </div>
+    );
+
+    // Row 13: BlankCard, Bigelow Rules, Mountains of Christmas, Emilys Candy, Paprika, Langar, BlankCard, Diplomata SC, BlankCard
+    const row13FontNames = [
+      'Bigelow Rules',
+      'Mountains of Christmas',
+      'Emilys Candy',
+      'Paprika',
+      'Langar',
+      'Diplomata SC'
+    ];
+    const row13Fonts = row13FontNames
+      .map(name => fonts.find(font => font.name === name))
+      .filter(Boolean);
+
+    // First BlankCard for row 13
+    grid.push(
+      <div
+        key={`blank-row13-0`}
+        style={{
+          gridColumn: `1`,
+          gridRow: '13',
+          width: '288px',
+          display: 'block',
+          transform: 'translateX(154px)'
+        }}
+      >
+        <BlankCard />
+      </div>
+    );
+
+    // The first 5 font cards for row 13
+    row13Fonts.slice(0, 5).forEach((font, index) => {
+      if (!font) return;
+      grid.push(
+        <div
+          key={font.id}
+          ref={el => { cardRefs.current[font.id] = el; }}
+          style={{
+            gridColumn: `${index + 2}`,
+            gridRow: '13',
+            width: '288px',
+            display: 'block',
+            transform: 'translateX(154px)'
+          }}
+        >
+          <FontCard
+            fontName={font.name}
+            foundry={font.designer}
+            isSelected={selectedFontId === font.id}
+            onClick={() => onSelectFont(font.id)}
+          />
+        </div>
+      );
+    });
+
+    // Second BlankCard for row 13 (column 7)
+    grid.push(
+      <div
+        key={`blank-row13-1`}
+        style={{ 
+          gridColumn: `7`,
+          gridRow: '13',
+          width: '288px',
+          display: 'block',
+          transform: 'translateX(154px)'
+        }}
+      >
+        <BlankCard />
+      </div>
+    );
+
+    // Diplomata SC font card (column 8)
+    const diplomataSCFont = row13Fonts[5];
+    if (diplomataSCFont) {
+      grid.push(
+        <div
+          key={diplomataSCFont.id}
+          ref={el => { cardRefs.current[diplomataSCFont.id] = el; }}
+          style={{
+            gridColumn: `8`,
+            gridRow: '13',
+            width: '288px',
+            display: 'block',
+            transform: 'translateX(154px)'
+          }}
+        >
+          <FontCard
+            fontName={diplomataSCFont.name}
+            foundry={diplomataSCFont.designer}
+            isSelected={selectedFontId === diplomataSCFont.id}
+            onClick={() => onSelectFont(diplomataSCFont.id)}
+          />
+        </div>
+      );
+    }
+
+    // Last BlankCard for row 13 (column 9)
+    grid.push(
+      <div
+        key={`blank-row13-end`}
+        style={{
+          gridColumn: `9`,
+          gridRow: '13',
+          width: '288px',
+          display: 'block',
+          transform: 'translateX(154px)'
+        }}
+      >
+        <BlankCard />
+      </div>
+    );
+    // Add BlankCard at end of row 13
+    grid.push(
+      <div
+        key={`blank-row13-end-10`}
+        style={{
+          gridColumn: `10`,
+          gridRow: '13',
+          width: '288px',
+          display: 'block',
+          transform: 'translateX(154px)'
+        }}
+      >
+        <BlankCard />
+      </div>
+    );
+
+    // Row 14: 9 BlankCards
+    for (let i = 0; i < 9; i++) {
+      grid.push(
+        <div
+          key={`blank-row14-${i}`}
+          style={{
+            gridColumn: `${i + 1}`,
+            gridRow: '14',
+            width: '288px',
+            display: 'block'
+          }}
+        >
+          <BlankCard />
+        </div>
+      );
+    }
+    // Add BlankCard at end of row 14
+    grid.push(
+      <div
+        key={`blank-row14-end-10`}
+        style={{
+          gridColumn: `10`,
+          gridRow: '14',
           width: '288px',
           display: 'block'
         }}
@@ -1121,20 +1527,31 @@ const FontMap: React.FC<FontMapProps> = ({ selectedFontId, onSelectFont, centere
 
   return (
     <div
+      style={{ width: '100%', height: '100%', overflow: 'hidden', paddingTop: 40, paddingLeft: 40, paddingBottom: 40 }}
       ref={gridContainerRef}
-      style={{
-        position: 'relative',
-        width: '288px',
-        height: '196px',
-        backgroundColor: '#F3F4FA',
-        borderRadius: '20px',
-        padding: '20px',
-        display: 'block',
-        boxSizing: 'border-box',
-        overflow: 'hidden',
-      }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerUp}
     >
-      {renderGrid()}
+      <motion.div
+        style={{
+          x,
+          y,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(9, 288px)',
+          gridTemplateRows: 'repeat(14, 196px)',
+          gap: '20px',
+          padding: 0,
+          width: 'max-content',
+          willChange: 'transform',
+        }}
+        animate={controls}
+        transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+        drag={false}
+      >
+        {renderGrid()}
+      </motion.div>
     </div>
   );
 };
